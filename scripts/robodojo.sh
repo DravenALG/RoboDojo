@@ -92,7 +92,7 @@ run_eval() {
   local policy_gpu="0"
   local env_gpu="0"
   local policy_env=""
-  local eval_env="RoboDojo"
+  local eval_env="${VIRTUAL_ENV:-RoboDojo}"
   local policy_dir=""
   local eval_num="${EVAL_NUM:-}"
   local dry_run="false"
@@ -131,7 +131,7 @@ Common options:
   --seed NUM            Eval seed / layout seed (default: 0)
   --policy-gpu ID       Policy server GPU (default: 0)
   --env-gpu ID          Isaac Sim GPU (default: 0)
-  --eval-env ENV        Simulator conda env (default: RoboDojo)
+  --eval-env ENV        Simulator conda env or venv path (default: active venv or RoboDojo)
   --dry-run             Print command without running it
 
 Split / multi-machine: use `robodojo.sh server` + `robodojo.sh client` (see docs/SPLIT_EVAL.md).

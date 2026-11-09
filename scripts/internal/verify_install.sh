@@ -8,7 +8,7 @@ policy_dir=""
 env_cfg="arx_x5"
 task_name="stack_bowls"
 ckpt_name=""
-sim_env="RoboDojo"
+sim_env="${VIRTUAL_ENV:-RoboDojo}"
 policy_env=""
 skip_isaac="false"
 skip_conda="false"
@@ -24,7 +24,7 @@ Options:
   --env-cfg NAME        env_cfg stem to validate (default: arx_x5)
   --task NAME           Task name to validate (default: stack_bowls)
   --ckpt NAME           Optional checkpoint directory under policy checkpoints
-  --sim-env NAME        Simulator conda env for Isaac imports (default: RoboDojo)
+  --sim-env NAME|PATH   Simulator conda env or venv path (default: active venv or RoboDojo)
   --policy-env NAME     Optional policy conda env to check
   --summary PATH        Write JSON summary to PATH
   --skip-isaac          Skip isaacsim/isaaclab import check
@@ -198,7 +198,30 @@ else
   record "FAIL" "python import" "cannot import env.global_configs"
 fi
 
-if [[ "${skip_conda}" == "true" ]]; then
+sim_python=""
+if [[ "${sim_env}" == */* ]]; then
+  sim_env="$(abs_path "${sim_env}")"
+  sim_python="${sim_env}/bin/python"
+fi
+
+if [[ -n "${sim_python}" ]]; then
+  if [[ -x "${sim_python}" ]]; then
+    record "PASS" "sim venv" "${sim_env}"
+  else
+    record "FAIL" "sim venv" "missing interpreter: ${sim_python}"
+  fi
+  if [[ -n "${policy_env}" && "${skip_conda}" != "true" ]]; then
+    if [[ "${policy_env}" == */* ]]; then
+      check_path file "$(abs_path "${policy_env}")/bin/python" "policy interpreter"
+    elif [[ "${policy_env}" == "uv" ]]; then
+      record "WARN" "policy env" "uv environment is selected by the policy launcher"
+    elif command -v conda >/dev/null 2>&1 && conda env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -qx "${policy_env}"; then
+      record "PASS" "policy conda env" "${policy_env}"
+    else
+      record "FAIL" "policy conda env" "${policy_env} not found"
+    fi
+  fi
+elif [[ "${skip_conda}" == "true" ]]; then
   record "WARN" "conda envs" "skipped by --skip-conda"
 elif command -v conda >/dev/null 2>&1; then
   envs="$(conda env list | awk 'NF && $1 !~ /^#/ {print $1}')"
@@ -222,6 +245,12 @@ fi
 
 if [[ "${skip_isaac}" == "true" ]]; then
   record "WARN" "Isaac imports" "skipped by --skip-isaac"
+elif [[ -n "${sim_python}" ]]; then
+  if "${sim_python}" -c 'import isaacsim; import isaaclab'; then
+    record "PASS" "Isaac imports" "isaacsim and isaaclab import in ${sim_env}"
+  else
+    record "FAIL" "Isaac imports" "isaacsim/isaaclab import failed in ${sim_env}"
+  fi
 elif command -v conda >/dev/null 2>&1; then
   if conda run -n "${sim_env}" python - <<'PY'; then
 import isaacsim  # noqa: F401

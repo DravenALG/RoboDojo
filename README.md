@@ -10,6 +10,62 @@
 
 https://private-user-images.githubusercontent.com/88101805/619409345-cc074c5d-4567-4418-8a29-1385aaba9d5b.mp4
 
+## 本机 `.venv` 配置
+
+当前环境已配置完成，可直接执行下方“检查与运行”命令。以下为本机最小重建步骤，
+依赖已有的 `/data/NTU_slab/draven/anaconda3/envs/RoboDojo` 环境，请保留它。
+该环境提供 Python 3.11、Isaac Sim 5.1 和 PyTorch 2.7.0+cu128，避免重复安装大型依赖。
+
+1. 创建仿真环境，并安装当前仓库的 IsaacLab、CuRobo：
+
+   ```bash
+   cd third_party/RoboDojo  # 从 codebase 根目录执行
+   git submodule update --init
+   uv venv .venv --system-site-packages --seed \
+     --python /data/NTU_slab/draven/anaconda3/envs/RoboDojo/bin/python
+   source scripts/activate_venv.sh
+   uv pip install --python .venv/bin/python 'packaging==23.0' 'wheel==0.45.1'
+   for pkg in third_party/IsaacLab/source/* third_party/curobo; do
+     python -m pip install --no-deps --no-build-isolation --ignore-installed -e "$pkg"
+   done
+   ```
+
+   当前工作区已适配 `.venv` 启动，并将 IsaacLab 的 Starlette 依赖改为 `0.45.3`，
+   以兼容 Isaac Sim；重建时需保留这些修改。激活脚本同时配置导入路径和无界面渲染。
+
+2. 创建示例策略环境，隔离 WebSockets 版本冲突（仿真器要求 12，策略服务端要求 ≥14）：
+
+   ```bash
+   uv venv .venv/policy-server --python .venv/bin/python
+   uv pip install --python .venv/policy-server/bin/python \
+     -r XPolicyLab/pyproject.toml 'numpy==1.26.0' \
+     'opencv-python-headless==4.11.0.86' 'websockets==15.0.1'
+   ```
+
+3. 下载仿真资产并生成机器人路径配置（需安装 Git LFS，已有完整资产可跳过下载）：
+
+   ```bash
+   bash scripts/init_assets.sh
+   python utils/update_embodiment_config_path.py
+   ```
+
+检查与运行（在 `third_party/RoboDojo` 目录下）：
+
+```bash
+source scripts/activate_venv.sh
+python -m pip check
+bash scripts/robodojo.sh doctor --skip-policy
+bash scripts/robodojo.sh benchmark \
+  --policy-dir XPolicyLab/policy/demo_policy \
+  --ckpt demo --policy-env "$PWD/.venv/policy-server" \
+  --action-type joint --only stack_bowls --eval-num 1
+```
+
+已验证全部 15,365 个资产文件完整，GPU 运算、物理步进、相机渲染及 `stack_bowls`
+单轮评测通过。示例策略无需权重，只输出零动作，成功率为 0 属正常结果。
+正式评测时替换策略目录、权重和策略环境；配置记录见 `.cache/setup/setup-summary.json`，
+验证结果见 `smoke_results/venv_validation_final.json`。
+
 ## News
 
 - **September 16–17, 2026**

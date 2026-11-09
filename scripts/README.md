@@ -11,6 +11,35 @@
 
 ## Typical eval flow
 
+For the local `.venv` setup, activate the simulator from the repository root:
+
+```bash
+source scripts/activate_venv.sh
+bash scripts/robodojo.sh doctor --skip-policy
+```
+
+The configured venv shares the large binary dependencies from the existing
+`/data/NTU_slab/draven/anaconda3/envs/RoboDojo` environment; keep that environment
+available. IsaacLab and CuRobo use editable installs from this checkout.
+`activate_venv.sh` also configures the project import paths and NVIDIA headless
+rendering. See `.venv/README.txt` for local setup details.
+
+Run a single episode with the zero-action demo policy to check the pipeline:
+
+```bash
+bash scripts/robodojo.sh benchmark \
+  --policy-dir XPolicyLab/policy/demo_policy \
+  --ckpt demo --policy-env "$PWD/.venv/policy-server" \
+  --action-type joint --only stack_bowls --eval-num 1
+```
+
+The demo server has its own small environment at `.venv/policy-server`: XPolicyLab
+requires WebSockets >=14, while Isaac Sim pins version 12. The demo needs no
+checkpoint weights; zero task success is expected. For actual
+policy evaluation, supply the policy's own environment and checkpoint. The
+simulator defaults to the active venv; `--eval-env` also accepts an explicit
+venv path or a Conda environment name. `doctor --sim-env` accepts the same forms.
+
 ```text
 robodojo.sh eval
   -> scripts/internal/run_policy_eval.sh

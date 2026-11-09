@@ -17,7 +17,7 @@ gpu_ids=""
 policy_gpu_ids=""
 env_gpu_ids=""
 policy_env=""
-eval_env="RoboDojo"
+eval_env="${VIRTUAL_ENV:-RoboDojo}"
 eval_num="1"
 policy_name=""
 policy_host=""
@@ -77,7 +77,7 @@ Options:
   --policy-gpu ID     GPU id for policy server (default: 0)
   --env-gpu ID        GPU id for Isaac Sim client (default: 0)
   --policy-env NAME   Policy conda env or uv env path (required)
-  --eval-env NAME     Simulator conda env (default: RoboDojo)
+  --eval-env NAME     Simulator conda env or venv path (default: active venv or RoboDojo)
   --policy-dir PATH   Policy directory containing eval.sh (required)
   -h, --help          Show this help
 
