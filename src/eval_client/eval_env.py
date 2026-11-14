@@ -5,7 +5,6 @@ import inspect
 import json
 import os
 
-from client_server.ws.model_client import WsModelClient
 import numpy as np
 import transforms3d as t3d
 import websockets
@@ -40,7 +39,8 @@ def _patch_websockets_proxy_compat():
     websockets.connect = connect_without_proxy
 
 
-def create_eval_env(config, app, resume_state=None, **kwargs):
+def create_eval_env(config, app, resume_state=None, *, client_factory=None, episode_runner=None,
+                    result_callback=None, **kwargs):
     task_name = config.eval_cfg.get("task_name", None)
     if task_name is None:
         raise ValueError("Task name must be specified in eval_cfg!")
@@ -86,6 +86,9 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
                 str(self.eval_seed) + "_" + self.additional_info,
                 run_id,
             )
+
+            if self.eval_cfg.get("output_dir"):
+                self.save_dir = str(self.eval_cfg["output_dir"])
 
             if resume_state is not None:
                 resumed_save_dir = resume_state.get("save_dir")
@@ -185,18 +188,24 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
             evaluation_id = self.deploy_cfg.get("evaluation_id", self.run_id)
             trial_id = self.deploy_cfg.get("trial_id", f"{self.task_name}-{self.run_id}")
             action_case_id = self.deploy_cfg.get("action_case_id", f"{self.task_name}_case")
-            self.model_client = WsModelClient(
-                url=policy_server_url,
-                evaluation_id=evaluation_id,
-                trial_id=trial_id,
-                action_case_id=action_case_id,
-                repeat_index=self.deploy_cfg.get("repeat_index"),
-                ws_ping_interval_s=self.deploy_cfg.get("ws_ping_interval_s", 20.0),
-                ws_ping_timeout_s=self.deploy_cfg.get("ws_ping_timeout_s", 20.0),
-            )
+            if client_factory is not None:
+                self.model_client = client_factory(policy_server_url)
+            else:
+                from client_server.ws.model_client import WsModelClient
+                self.model_client = WsModelClient(
+                    url=policy_server_url,
+                    evaluation_id=evaluation_id,
+                    trial_id=trial_id,
+                    action_case_id=action_case_id,
+                    repeat_index=self.deploy_cfg.get("repeat_index"),
+                    ws_ping_interval_s=self.deploy_cfg.get("ws_ping_interval_s", 20.0),
+                    ws_ping_timeout_s=self.deploy_cfg.get("ws_ping_timeout_s", 20.0),
+                )
             self.robot_action_dim_info = get_robot_action_dim_info(env_cfg=self.eval_cfg)
 
         def close(self):
+            if client_factory is not None:
+                self.model_client.close()
             self._abort_video_writers()
             self.obs_manager.reset()
             super().close()
@@ -242,7 +251,10 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
             self.robot_manager.set_robot_init_state()
             self.reward_manager.init_state()
 
-            self.model_client.call(func_name="reset")
+            if client_factory is not None:
+                self.model_client.reset()
+            else:
+                self.model_client.call(func_name="reset")
 
         def setup_scene(self):
             self.scene_manager.apply_saved_poses(env_idx_list=list(range(self.num_envs)))
@@ -285,6 +297,8 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
             return data_list
 
         def eval_one_episode(self):
+            if episode_runner is not None:
+                return episode_runner(self, self.model_client)
             policy_name = self.deploy_cfg["policy_name"]
             try:
                 eval_module = __import__(
@@ -829,12 +843,15 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
                 self.eval_result["success_rate"] = self.success_nums / eval_time
                 self.eval_result["score"] = self.total_score / eval_time * 100
             self.eval_result["eval_time"] = eval_time
+            if result_callback is not None:
+                result_callback(self)
             save_json(self.eval_result, os.path.join(self.save_dir, "_result.json"))
             # Refresh the resume manifest at the end of every batch so that a
             # downstream SIGABRT (which beats the in-process PhysXFatalError
             # handler) still recovers everything up to the previous batch.
             try:
-                self.persist_resume_manifest()
+                if result_callback is None:
+                    self.persist_resume_manifest()
             except Exception as e:
                 print(f"[EvalEnv] persist_resume_manifest after run_eval failed: {e}")
 
